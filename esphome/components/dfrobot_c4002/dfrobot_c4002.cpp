@@ -1,7 +1,6 @@
 #include "dfrobot_c4002.h"
 #include "esphome/core/application.h"
 #include <string>
-#include <cstdio>
 
 namespace esphome {
 namespace dfrobot_c4002 {
@@ -14,46 +13,10 @@ static const char *const TAG = "dfrobot_c4002: ";
  * We call update_config_param() to load device configuration and publish initial values.
  */
 void C4002Component::setup() {
-  ESP_LOGD(TAG, "Waiting 2 s for C4002 to boot...");
   for (int i = 0; i < 20; i++) {
     App.feed_wdt();
     delay(100);
   }
-
-  // Passive listen: dump whatever the sensor sends autonomously for 3 s.
-  // This captures the full raw packet structure before we send any command,
-  // which tells us whether 0x14 0x38 0x54 0xFE is a real autonomous frame header.
-  ESP_LOGW(TAG, "=== Passive RX dump (3 s) — not sending any commands ===");
-  uint32_t dump_start = millis();
-  uint8_t dump_buf[128];
-  size_t dump_total = 0;
-  while (millis() - dump_start < 3000) {
-    App.feed_wdt();
-    size_t avail = this->available();
-    if (avail > 0) {
-      size_t n = std::min(avail, sizeof(dump_buf) - dump_total);
-      this->read_array(dump_buf + dump_total, n);
-      dump_total += n;
-      if (dump_total >= sizeof(dump_buf))
-        break;
-    }
-    delay(1);
-  }
-  if (dump_total == 0) {
-    ESP_LOGW(TAG, "Passive RX: 0 bytes — sensor TX not reaching GPIO36 (RX pin)");
-  } else {
-    // Print in rows of 16
-    char line[64];
-    for (size_t i = 0; i < dump_total; i += 16) {
-      size_t row = std::min((size_t) 16, dump_total - i);
-      int off = 0;
-      for (size_t j = 0; j < row; j++)
-        off += snprintf(line + off, sizeof(line) - off, "%02X ", dump_buf[i + j]);
-      ESP_LOGW(TAG, "RX[%03d]: %s", (int) i, line);
-    }
-  }
-  ESP_LOGW(TAG, "=== End passive dump (%d bytes) ===", (int) dump_total);
-
   update_config_param();
   this->publish_text("The initialization of c4002 was successful!");
 }
@@ -131,21 +94,17 @@ void C4002Component::get_data() {
 void C4002Component::update_config_param() {
   ESP_LOGD(TAG, "Initialising C4002 sensor...");
 
-  //** driver init — bounded retry with WDT feeding **/
   uint8_t attempt = 0;
-  const uint8_t MAX_ATTEMPTS = 30;  // ~15 s total (30 × 500 ms)
+  const uint8_t MAX_ATTEMPTS = 30;
   while (!begin()) {
     App.feed_wdt();
-    delay(500);  // delay() yields; delayMicroseconds() does not
+    delay(500);
     if (++attempt >= MAX_ATTEMPTS) {
-      ESP_LOGE(TAG, "C4002 not responding after %u attempts — check UART wiring and sensor power", attempt);
+      ESP_LOGE(TAG, "C4002 not responding after %u attempts", attempt);
       this->mark_failed();
       return;
     }
-    ESP_LOGD(TAG, "C4002 begin failed (attempt %u/%u) — set_report_period or UART read timed out", attempt,
-             MAX_ATTEMPTS);
   }
-  ESP_LOGD(TAG, "C4002 begin success after %u attempt(s)", attempt + 1);
 
   setup_number();
 
@@ -846,17 +805,6 @@ RecvPack C4002Component::recv_pack() {
 
   size_t recv_len = uart_read_raw(pdata.data(), 8, 100);
 
-  // Diagnostic: log every raw receive so we can see what the sensor is sending.
-  if (recv_len == 0) {
-    ESP_LOGW(TAG, "recv_pack: 0 bytes in 100 ms — sensor TX not reaching ESP32 RX, or wrong baud rate");
-  } else {
-    char hex[32];
-    size_t n = std::min(recv_len, (size_t) 8);
-    for (size_t i = 0; i < n; i++)
-      snprintf(hex + i * 3, sizeof(hex) - i * 3, "%02X ", pdata[i]);
-    ESP_LOGD(TAG, "recv_pack: got %d byte(s): %s", (int) recv_len, hex);
-  }
-
   if (recv_len == 8 && pdata[0] == C4002_FRAME_HEADER1 && pdata[1] == C4002_FRAME_HEADER2 &&
       pdata[2] == C4002_FRAME_HEADER3 && pdata[3] == C4002_FRAME_HEADER4) {
     size_t pack_len = (pdata[5] << 8) | pdata[4];
@@ -889,9 +837,6 @@ RecvPack C4002Component::recv_pack() {
       recv_dat.resPonCode = DATALEN_ERR;
       ESP_LOGW(TAG, "recvlen error: expected %d more bytes, got %d", (int) (pack_len - 8), (int) recv_len);
     }
-  } else if (recv_len > 0) {
-    recv_dat.resPonCode = AUTHENTICATION_ERR;
-    ESP_LOGW(TAG, "recv_pack: bad header — expected FA F5 AA A5, got first byte 0x%02X (wrong baud rate?)", pdata[0]);
   } else {
     recv_dat.resPonCode = AUTHENTICATION_ERR;
   }
@@ -943,11 +888,6 @@ void C4002Component::uart_clear_buffer() {
  */
 void C4002Component::uart_write_data(uint8_t *datas, size_t len) {
   uart_clear_buffer();
-  char hex[64];
-  size_t n = std::min(len, (size_t) 16);
-  for (size_t i = 0; i < n; i++)
-    snprintf(hex + i * 3, sizeof(hex) - i * 3, "%02X ", datas[i]);
-  ESP_LOGD(TAG, "TX %d byte(s): %s", (int) len, hex);
   this->write_array(datas, len);
 }
 
