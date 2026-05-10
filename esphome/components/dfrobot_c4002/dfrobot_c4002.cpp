@@ -14,6 +14,13 @@ static const char *const TAG = "dfrobot_c4002: ";
  * We call update_config_param() to load device configuration and publish initial values.
  */
 void C4002Component::setup() {
+  // Give the sensor time to boot before the first UART command.
+  // mmWave modules typically need ~1-2 s after power-on to become ready.
+  ESP_LOGD(TAG, "Waiting 2 s for C4002 to boot...");
+  for (int i = 0; i < 20; i++) {
+    App.feed_wdt();
+    delay(100);
+  }
   update_config_param();
   this->publish_text("The initialization of c4002 was successful!");
 }
@@ -806,13 +813,13 @@ RecvPack C4002Component::recv_pack() {
 
   std::vector<uint8_t> pdata(60, 0);
 
-  size_t recv_len = uart_read_raw(pdata.data(), 8, 20);
+  size_t recv_len = uart_read_raw(pdata.data(), 8, 100);
 
   if (recv_len == 8 && pdata[0] == C4002_FRAME_HEADER1 && pdata[1] == C4002_FRAME_HEADER2 &&
       pdata[2] == C4002_FRAME_HEADER3 && pdata[3] == C4002_FRAME_HEADER4) {
     size_t pack_len = (pdata[5] << 8) | pdata[4];
 
-    recv_len = uart_read_raw(&pdata[8], (size_t) (pack_len - 8), 20);
+    recv_len = uart_read_raw(&pdata[8], (size_t) (pack_len - 8), 100);
 
     if (recv_len == (pack_len - 8)) {
       recv_dat.packType = pdata[7];
