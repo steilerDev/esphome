@@ -365,6 +365,7 @@ class C4002Component : public Component, public uart::UARTDevice {
   //** area range **//
   float current_area_[6] = {0, 0, 0, 0, 0, 0};
   uint8_t enable_door_[15] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+  float interval_point_[15] = {0.2, 0.8, 1.6, 2.4, 3.2, 4, 4.8, 5.6, 6.4, 7.2, 8, 8.8, 9.6, 10.4, 11.2};
 
   //** light threshold **//
   uint16_t light_threshold_;
@@ -399,9 +400,6 @@ class C4002Component : public Component, public uart::UARTDevice {
 
 #ifdef USE_TEXT_SENSOR
   text_sensor::TextSensor *text_sensor_{nullptr};
-
-  float interval_point_[15] = {0.2, 0.8, 1.6, 2.4, 3.2, 4, 4.8, 5.6, 6.4, 7.2, 8, 8.8, 9.6, 10.4, 11.2};
-
 #endif
 
   std::vector<C4002Listener *> listeners_{};
