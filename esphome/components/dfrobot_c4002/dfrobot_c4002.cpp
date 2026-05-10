@@ -1,4 +1,5 @@
 #include "dfrobot_c4002.h"
+#include "esphome/core/application.h"
 #include <string>
 #include <cstdio>
 
@@ -88,15 +89,23 @@ void C4002Component::get_data() {
  * This is typically called on setup or when settings change.
  */
 void C4002Component::update_config_param() {
-  ESP_LOGD(TAG, "update config param test!");
+  ESP_LOGD(TAG, "Initialising C4002 sensor...");
 
-  //** driver init **/
+  //** driver init — bounded retry with WDT feeding **/
+  uint8_t attempt = 0;
+  const uint8_t MAX_ATTEMPTS = 30;  // ~15 s total (30 × 500 ms)
   while (!begin()) {
-    delayMicroseconds(1000 * 300);
-
-    ESP_LOGD(TAG, "C4002 begin failed");
+    App.feed_wdt();
+    delay(500);  // delay() yields; delayMicroseconds() does not
+    if (++attempt >= MAX_ATTEMPTS) {
+      ESP_LOGE(TAG, "C4002 not responding after %u attempts — check UART wiring and sensor power", attempt);
+      this->mark_failed();
+      return;
+    }
+    ESP_LOGD(TAG, "C4002 begin failed (attempt %u/%u) — set_report_period or UART read timed out", attempt,
+             MAX_ATTEMPTS);
   }
-  ESP_LOGD(TAG, "C4002 begin success");
+  ESP_LOGD(TAG, "C4002 begin success after %u attempt(s)", attempt + 1);
 
   setup_number();
 
@@ -488,6 +497,7 @@ int8_t C4002Component::restart() {
   }
 
   for (int i = 0; i < 50; i++) {
+    App.feed_wdt();
     delay(10);
   }
   update_config_param();
