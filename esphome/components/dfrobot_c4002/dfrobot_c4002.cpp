@@ -815,6 +815,17 @@ RecvPack C4002Component::recv_pack() {
 
   size_t recv_len = uart_read_raw(pdata.data(), 8, 100);
 
+  // Diagnostic: log every raw receive so we can see what the sensor is sending.
+  if (recv_len == 0) {
+    ESP_LOGW(TAG, "recv_pack: 0 bytes in 100 ms — sensor TX not reaching ESP32 RX, or wrong baud rate");
+  } else {
+    char hex[32];
+    size_t n = std::min(recv_len, (size_t) 8);
+    for (size_t i = 0; i < n; i++)
+      snprintf(hex + i * 3, sizeof(hex) - i * 3, "%02X ", pdata[i]);
+    ESP_LOGD(TAG, "recv_pack: got %d byte(s): %s", (int) recv_len, hex);
+  }
+
   if (recv_len == 8 && pdata[0] == C4002_FRAME_HEADER1 && pdata[1] == C4002_FRAME_HEADER2 &&
       pdata[2] == C4002_FRAME_HEADER3 && pdata[3] == C4002_FRAME_HEADER4) {
     size_t pack_len = (pdata[5] << 8) | pdata[4];
@@ -841,12 +852,15 @@ RecvPack C4002Component::recv_pack() {
         }
       } else {
         recv_dat.resPonCode = AUTHENTICATION_ERR;
-        ESP_LOGD(TAG, "Authentication error");
+        ESP_LOGW(TAG, "Authentication error (checksum mismatch)");
       }
     } else {
       recv_dat.resPonCode = DATALEN_ERR;
-      ESP_LOGD(TAG, " recvlen error");
+      ESP_LOGW(TAG, "recvlen error: expected %d more bytes, got %d", (int) (pack_len - 8), (int) recv_len);
     }
+  } else if (recv_len > 0) {
+    recv_dat.resPonCode = AUTHENTICATION_ERR;
+    ESP_LOGW(TAG, "recv_pack: bad header — expected FA F5 AA A5, got first byte 0x%02X (wrong baud rate?)", pdata[0]);
   } else {
     recv_dat.resPonCode = AUTHENTICATION_ERR;
   }
@@ -898,6 +912,11 @@ void C4002Component::uart_clear_buffer() {
  */
 void C4002Component::uart_write_data(uint8_t *datas, size_t len) {
   uart_clear_buffer();
+  char hex[64];
+  size_t n = std::min(len, (size_t) 16);
+  for (size_t i = 0; i < n; i++)
+    snprintf(hex + i * 3, sizeof(hex) - i * 3, "%02X ", datas[i]);
+  ESP_LOGD(TAG, "TX %d byte(s): %s", (int) len, hex);
   this->write_array(datas, len);
 }
 
