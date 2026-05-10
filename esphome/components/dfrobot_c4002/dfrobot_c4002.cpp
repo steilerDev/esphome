@@ -14,13 +14,46 @@ static const char *const TAG = "dfrobot_c4002: ";
  * We call update_config_param() to load device configuration and publish initial values.
  */
 void C4002Component::setup() {
-  // Give the sensor time to boot before the first UART command.
-  // mmWave modules typically need ~1-2 s after power-on to become ready.
   ESP_LOGD(TAG, "Waiting 2 s for C4002 to boot...");
   for (int i = 0; i < 20; i++) {
     App.feed_wdt();
     delay(100);
   }
+
+  // Passive listen: dump whatever the sensor sends autonomously for 3 s.
+  // This captures the full raw packet structure before we send any command,
+  // which tells us whether 0x14 0x38 0x54 0xFE is a real autonomous frame header.
+  ESP_LOGW(TAG, "=== Passive RX dump (3 s) — not sending any commands ===");
+  uint32_t dump_start = millis();
+  uint8_t dump_buf[128];
+  size_t dump_total = 0;
+  while (millis() - dump_start < 3000) {
+    App.feed_wdt();
+    size_t avail = this->available();
+    if (avail > 0) {
+      size_t n = std::min(avail, sizeof(dump_buf) - dump_total);
+      this->read_array(dump_buf + dump_total, n);
+      dump_total += n;
+      if (dump_total >= sizeof(dump_buf))
+        break;
+    }
+    delay(1);
+  }
+  if (dump_total == 0) {
+    ESP_LOGW(TAG, "Passive RX: 0 bytes — sensor TX not reaching GPIO36 (RX pin)");
+  } else {
+    // Print in rows of 16
+    char line[64];
+    for (size_t i = 0; i < dump_total; i += 16) {
+      size_t row = std::min((size_t) 16, dump_total - i);
+      int off = 0;
+      for (size_t j = 0; j < row; j++)
+        off += snprintf(line + off, sizeof(line) - off, "%02X ", dump_buf[i + j]);
+      ESP_LOGW(TAG, "RX[%03d]: %s", (int) i, line);
+    }
+  }
+  ESP_LOGW(TAG, "=== End passive dump (%d bytes) ===", (int) dump_total);
+
   update_config_param();
   this->publish_text("The initialization of c4002 was successful!");
 }
