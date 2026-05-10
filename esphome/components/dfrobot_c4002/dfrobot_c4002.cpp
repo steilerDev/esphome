@@ -291,25 +291,27 @@ bool C4002Component::factory_reset() {
   uint8_t send_date[10];
   uint16_t data_len = 5;
 
-  send_date[0] = CMD_FACTORY_RESET;
+  send_date[0] = CMD_FACTORY_RESET_USER;
   send_date[1] = READ_AND_WRITE_REQ;
   send_date[2] = data_len >> 0 & 0xFF;
   send_date[3] = data_len >> 8 & 0xFF;
   send_date[4] = 0x00;
+  delay(50);
   send_pack(send_date, data_len, FRAME_TYPE_WRITE_REQUSET);
 
   RecvPack rec_pack = recv_pack();
   if (SUCCEED != rec_pack.resPonCode) {
     return false;
   }
-  delay(10);
+  delay(50);
 
-  send_date[0] = CMD_FACTORY_RESET_USER;
+  send_date[0] = CMD_FACTORY_RESET;
   send_pack(send_date, data_len, FRAME_TYPE_WRITE_REQUSET);
   rec_pack = recv_pack();
   if (SUCCEED != rec_pack.resPonCode) {
     return false;
   }
+  delay(50);
   reset_flag_ = 1;
 
   return true;
@@ -687,17 +689,13 @@ MoveTgt C4002Component::get_move_target_info() {
  */
 bool C4002Component::begin() {
   bool ret;
-
+  delay(10);
   ret = set_report_period(255);
   if (!ret) {
     return false;
   }
-  delay(10);
-  ret = set_resolution_mode(resolution_mode_);
-  if (!ret) {
-    return false;
-  }
-  ret = enable_all_distance_door(enable_door_);
+  get_resolution_mode();
+  get_out_mode();
   return ret;
 }
 
